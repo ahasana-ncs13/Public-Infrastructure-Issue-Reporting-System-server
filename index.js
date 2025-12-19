@@ -105,22 +105,19 @@ async function run() {
       res.send(detailsIssue);
     });
 
-    // user api
+    // users api
     app.post("/users", async (req, res) => {
       const user = req.body;
-
       // Check if user already exists
       const existingUser = await userCollection.findOne({
         email: user.email,
       });
-
       if (existingUser) {
         return res.send({
           message: "User already exists",
           inserted: false,
         });
       }
-
       const newUser = {
         name: user.name,
         email: user.email,
@@ -131,6 +128,80 @@ async function run() {
       };
       const result = await userCollection.insertOne(newUser);
       res.send(result);
+    });
+
+    // current user api
+    app.get("/currentuser/:email", async (req, res) => {
+      const email = req.params.email;
+      const currentuser = await userCollection.findOne({ email });
+      res.send(currentuser);
+    });
+    // current user update api
+    app.patch("/currentuser/:email", async (req, res) => {
+      const email = req.params.email;
+      const query = { email: email };
+      const currentuser = req.body;
+      const updateUser = {
+        $set: {
+          name: currentuser.name,
+          email: currentuser.email,
+          photoURL: currentuser.photoURL,
+        },
+      };
+      const updateCurrentuser = await userCollection.updateOne(query,updateUser);
+      res.send(updateCurrentuser);
+    });
+
+    // citizenDashboard report issue api
+    app.post("/reportissue", async (req, res) => {
+      const Newissue = req.body;
+      Newissue.email = req.body.email;
+      Newissue.status = "Pending";
+      Newissue.priority = "Normal";
+      Newissue.upvotes = 0;
+      Newissue.createdAt = new Date();
+      const reportIssue = await issueCollection.insertOne(Newissue);
+      res.send(reportIssue);
+    });
+
+    // citizenDashboard myissue api
+    app.get("/myissue", async (req, res) => {
+      const { email } = req.query;
+      const query = {};
+      if (email) {
+        query.email = email;
+      }
+      const cursor = issueCollection.find(query);
+      const myissue = await cursor.toArray();
+      res.send(myissue);
+    });
+
+    app.patch("/myissue/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const issue = req.body;
+      const updateIssue = {
+        $set: {
+          title: issue.title,
+          description: issue.description,
+          category: issue.category,
+          location: issue.location,
+          image: issue.image,
+          status: issue.status,
+          email: issue.email,
+          priority: issue.priority,
+          updatedAt: new Date(),
+        },
+      };
+      const editedIssue = await issueCollection.updateOne(query, updateIssue);
+      res.send(editedIssue);
+    });
+
+    app.delete("/myissue/:id", async (req, res) => {
+      const id = req.params.id;
+      const query = { _id: new ObjectId(id) };
+      const deleteIssue = await issueCollection.deleteOne(query);
+      res.send(deleteIssue);
     });
 
     // Send a ping to confirm a successful connection
