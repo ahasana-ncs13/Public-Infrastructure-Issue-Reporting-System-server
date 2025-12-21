@@ -3,6 +3,7 @@ const express = require("express");
 const cors = require("cors");
 const app = express();
 require("dotenv").config();
+const stripe = require("stripe")(process.env.STRIPE_SECRET);
 const port = process.env.PORT || 3000;
 
 app.use(cors());
@@ -68,35 +69,30 @@ async function run() {
     // update upvote api
     app.patch("/all-issue/:id", async (req, res) => {
       const id = req.params.id;
+      const { email } = req.body;
       const query = { _id: new ObjectId(id) };
+      const issue = await issueCollection.findOne(query);
+
+      if (issue.email === email) {
+        return res
+          .status(403)
+          .send({ message: "You cannot upvote your own issue" });
+      }
+
+      if (issue.upvotedBy?.includes(email)) {
+        return res.send({ message: "Already upvoted" });
+      }
       const updateUpvote = {
         $inc: { upvotes: 1 },
+        $push: { upvotedBy: email },
       };
       const updatedUpvote = await issueCollection.updateOne(
         query,
         updateUpvote
       );
-      res.send(updatedUpvote);
+      res.send({ message: "Upvoted successfully", updatedUpvote });
     });
 
-    // // update edit api
-    // app.patch("/edit-issue/:id",async(req,res)=>{
-    //   const id = req.params.id
-    //   //  const data= req.body
-    //   const query={_id : new ObjectId(id)}
-
-    //   console.log(data)
-
-    //   // const updatedData ={
-    //   //   $set: data
-    //   // }
-
-    //   const updatedIssue = await issueCollection.findOne(
-    //     query,
-    //     // updatedData
-    //   );
-    //   res.send(updatedIssue);
-    // })
     // details Issue api
     app.get("/issue-details/:id", async (req, res) => {
       const id = req.params.id;
@@ -123,6 +119,7 @@ async function run() {
         email: user.email,
         photoURL: user.photoURL || "",
         role: "user",
+        isPremium: false,
         createdAt: new Date(),
         lastLogin: new Date(),
       };
@@ -148,7 +145,10 @@ async function run() {
           photoURL: currentuser.photoURL,
         },
       };
-      const updateCurrentuser = await userCollection.updateOne(query,updateUser);
+      const updateCurrentuser = await userCollection.updateOne(
+        query,
+        updateUser
+      );
       res.send(updateCurrentuser);
     });
 
@@ -176,6 +176,7 @@ async function run() {
       res.send(myissue);
     });
 
+    // citizenDashboard myissue update api
     app.patch("/myissue/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
@@ -196,12 +197,99 @@ async function run() {
       const editedIssue = await issueCollection.updateOne(query, updateIssue);
       res.send(editedIssue);
     });
-
+    // citizenDashboard myissue delete api
     app.delete("/myissue/:id", async (req, res) => {
       const id = req.params.id;
       const query = { _id: new ObjectId(id) };
       const deleteIssue = await issueCollection.deleteOne(query);
       res.send(deleteIssue);
+    });
+
+    // citizenDashboard dashboard-statics api
+    app.get("/citizendashboard-stats", async (req, res) => {
+      const totalIssues = await issueCollection.countDocuments();
+      const pendingIssues = await issueCollection.countDocuments({
+        status: "Pending",
+      });
+      const inProgressIssues = await issueCollection.countDocuments({
+        status: "In Progress",
+      });
+
+      const resolvedIssues = await issueCollection.countDocuments({
+        status: "Resolved",
+      });
+
+      // const payments = await paymentCollection
+      //   .aggregate([
+      //     {
+      //       $group: {
+      //         _id: null,
+      //         totalAmount: { $sum: "$amount" },
+      //       },
+      //     },
+      //   ])
+      //   .toArray();
+
+      res.send({
+        totalIssues,
+        pendingIssues,
+        inProgressIssues,
+        resolvedIssues,
+        // totalPayments: payments[0]?.totalAmount || 0,
+      });
+    });
+
+    // payment related api
+    app.post("/create-checkout-session", async (req, res) => {
+      const paymentInfo = req.body;
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        mode: "payment",
+        line_items: [
+          {
+            price_data: {
+              currency: "BDT",
+              product_data: {
+                name: "Premium Subscription",
+              },
+              unit_amount: 1000 * 100, // Stripe uses paisa
+            },
+            quantity: 1,
+          },
+        ],
+        customer_email: paymentInfo.email,
+        metadata: {
+          PremiumUser_id: paymentInfo.PremiumUser_id,
+        },
+        success_url: `${process.env.SITE_DOMAIN}/dashboardLayout/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.SITE_DOMAIN}/dashboardLayout/payment-cancel`,
+      });
+      // console.log(session)
+      res.send({ url: session.url });
+    });
+
+    app.patch("/payment-success", async (req, res) => {
+      const { sessionId } = req.body;
+
+      const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+      if (session.payment_status === "paid") {
+        const email = session.customer_email;
+
+        await userCollection.updateOne(
+          { email:email },
+          {
+            $set: {
+              isPremium: true,
+              premiumSince: new Date(),
+            },
+          }
+        );
+
+        return res.send({ success: true });
+      }
+
+      res.status(400).send({ success: false });
     });
 
     // Send a ping to confirm a successful connection
