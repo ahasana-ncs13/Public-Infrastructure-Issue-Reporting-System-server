@@ -26,7 +26,7 @@ async function run() {
     const CivicFixBD = client.db("CivicFixBD");
     const issueCollection = CivicFixBD.collection("all-Issue");
     const userCollection = CivicFixBD.collection("users");
-    const reportIssueCollection = CivicFixBD.collection("reportIssue");
+    // const reportIssueCollection = CivicFixBD.collection("reportIssue");
 
     // latest Issue api
     app.get("/latest-issue", async (req, res) => {
@@ -50,7 +50,7 @@ async function run() {
 
     // all issue api
     app.get("/all-issue", async (req, res) => {
-      const { title, category, location } = req.query;
+      const { title, category, location ,limit,skip} = req.query;
       let query = {};
       if (title || category || location) {
         // Search title using regex, case-insensitive
@@ -60,10 +60,13 @@ async function run() {
           { location: { $regex: location, $options: "i" } },
         ];
       }
-      console.log(title);
-      const cursor = issueCollection.find(query).sort({priority:1});
+      // console.log(title);
+      const countIssue=await issueCollection.countDocuments()
+      const cursor = issueCollection.find(query).sort({priority:1}).limit(Number(limit)).skip(Number(skip));
       const allIssue = await cursor.toArray();
-      res.send(allIssue);
+
+       
+      res.send({allIssue,total:countIssue});
     });
 
     // update upvote api
@@ -118,7 +121,7 @@ async function run() {
         name: user.name,
         email: user.email,
         photoURL: user.photoURL || "",
-        role: "user",
+        role: user.role || "user",
         isPremium: false,
         createdAt: new Date(),
         lastLogin: new Date(),
