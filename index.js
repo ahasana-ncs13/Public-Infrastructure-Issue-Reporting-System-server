@@ -61,7 +61,7 @@ async function run() {
         ];
       }
       console.log(title);
-      const cursor = issueCollection.find(query);
+      const cursor = issueCollection.find(query).sort({priority:1});
       const allIssue = await cursor.toArray();
       res.send(allIssue);
     });
@@ -156,12 +156,35 @@ async function run() {
     app.post("/reportissue", async (req, res) => {
       const Newissue = req.body;
       Newissue.email = req.body.email;
-      Newissue.status = "Pending";
-      Newissue.priority = "Normal";
-      Newissue.upvotes = 0;
-      Newissue.createdAt = new Date();
-      const reportIssue = await issueCollection.insertOne(Newissue);
+      const user = await userCollection.findOne({ email: Newissue.email });
+
+      if (user.isPremium === false) {
+        const issueCount = await issueCollection.countDocuments({ email });
+
+        if (issueCount >= 3) {
+          return res.status(403).send({
+            message: "Free users can submit only 3 issues. Please subscribe.",
+          });
+        }
+      }
+      const newissue = {
+        ...Newissue,
+        status: "Pending",
+        priority: "Normal",
+        upvotes: 0,
+        createdAt: new Date(),
+      };
+
+      const reportIssue = await issueCollection.insertOne(newissue);
       res.send(reportIssue);
+    });
+
+    app.get("/myissue-count/:email", async (req, res) => {
+      const email = req.params.email;
+
+      const count = await issueCollection.countDocuments({ email });
+
+      res.send({ count });
     });
 
     // citizenDashboard myissue api
@@ -252,7 +275,7 @@ async function run() {
               product_data: {
                 name: "Premium Subscription",
               },
-              unit_amount: 1000 * 100, // Stripe uses paisa
+              unit_amount: 1000 * 100,
             },
             quantity: 1,
           },
@@ -275,12 +298,24 @@ async function run() {
 
       if (session.payment_status === "paid") {
         const email = session.customer_email;
+        const issueId = session.metadata.issue_id;
 
         await userCollection.updateOne(
-          { email:email },
+          { email: email },
           {
             $set: {
+              payment_status: "paid",
               isPremium: true,
+              premiumSince: new Date(),
+            },
+          }
+        );
+        await issueCollection.updateOne(
+          { _id: new ObjectId(issueId) },
+          {
+            $set: {
+              payment_status: "paid",
+              priority: "High",
               premiumSince: new Date(),
             },
           }
@@ -290,6 +325,35 @@ async function run() {
       }
 
       res.status(400).send({ success: false });
+    });
+
+    // boost payment api
+    app.post("/create-checkout-session-boost", async (req, res) => {
+      const paymentInfo = req.body;
+      const session = await stripe.checkout.sessions.create({
+        payment_method_types: ["card"],
+        mode: "payment",
+        line_items: [
+          {
+            price_data: {
+              currency: "BDT",
+              product_data: {
+                name: paymentInfo.title,
+              },
+              unit_amount: 100 * 100,
+            },
+            quantity: 1,
+          },
+        ],
+        customer_email: paymentInfo.email,
+        metadata: {
+          issue_id: paymentInfo._id,
+        },
+        success_url: `${process.env.SITE_DOMAIN}/dashboardLayout/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+        cancel_url: `${process.env.SITE_DOMAIN}/dashboardLayout/payment-cancel`,
+      });
+      console.log(session);
+      res.send({ url: session.url });
     });
 
     // Send a ping to confirm a successful connection
