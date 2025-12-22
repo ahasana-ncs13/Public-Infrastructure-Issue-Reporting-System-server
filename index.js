@@ -486,8 +486,8 @@ app.get("/", (req, res) => {
   res.send("Public Infrastructure Issue Reporting System server is running!");
 });
 
-// app.listen(port, () => {
-//   console.log(
-//     `Public Infrastructure Issue Reporting System app listening on port ${port}`
-//   );
-// });
+app.listen(port, () => {
+  console.log(
+    `Public Infrastructure Issue Reporting System app listening on port ${port}`
+  );
+});

@@ -1,3 +1,4 @@
 node_modules
 .env
 civicfix-firebase-adminsdk.json
+.vercel
