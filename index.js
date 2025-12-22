@@ -7,7 +7,14 @@ const stripe = require("stripe")(process.env.STRIPE_SECRET);
 const port = process.env.PORT || 3000;
 
 const admin = require("firebase-admin");
-const serviceAccount = require("./civicfix-firebase-adminsdk.json");
+
+// const serviceAccount = require("./civicfix-firebase-adminsdk.json");
+
+const decoded = Buffer.from(process.env.FB_SERVICE_KEY, "base64").toString(
+  "utf8"
+);
+const serviceAccount = JSON.parse(decoded);
+
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
@@ -24,7 +31,7 @@ const verifyFirebaseToken = async (req, res, next) => {
   try {
     const idToken = token.split(" ")[1];
     const decoded = await admin.auth().verifyIdToken(idToken);
-    console.log(decoded);
+    // console.log(decoded);
     req.decoded_email = decoded.email;
     next();
   } catch (err) {
@@ -50,6 +57,24 @@ async function run() {
     const issueCollection = CivicFixBD.collection("all-Issue");
     const userCollection = CivicFixBD.collection("users");
     // const reportIssueCollection = CivicFixBD.collection("reportIssue");
+
+    const verifyAdmin = async (req, res, next) => {
+      try {
+        const email = req.decoded_email;
+
+        const user = await userCollection.findOne({ email });
+
+        if (!user || user.role !== "Admin") {
+          return res
+            .status(403)
+            .send({ message: "forbidden access (admin only)" });
+        }
+
+        next();
+      } catch (error) {
+        res.status(500).send({ message: "admin verification failed" });
+      }
+    };
 
     // latest Issue api
     app.get("/latest-issue", async (req, res) => {
@@ -403,16 +428,55 @@ async function run() {
           success_url: `${process.env.SITE_DOMAIN}/dashboardLayout/payment-success?session_id={CHECKOUT_SESSION_ID}`,
           cancel_url: `${process.env.SITE_DOMAIN}/dashboardLayout/payment-cancel`,
         });
-        console.log(session);
+        // console.log(session);
         res.send({ url: session.url });
       }
     );
 
-    // Send a ping to confirm a successful connection
-    await client.db("admin").command({ ping: 1 });
-    console.log(
-      "Pinged your deployment. You successfully connected to MongoDB!"
+    app.get(
+      "/admin/dashboard-stats",
+      verifyFirebaseToken,
+      verifyAdmin,
+      async (req, res) => {
+        const totalIssues = await issueCollection.countDocuments();
+        const resolvedIssues = await issueCollection.countDocuments({
+          status: "Resolved",
+        });
+        const pendingIssues = await issueCollection.countDocuments({
+          status: "Pending",
+        });
+        // const rejectedIssues = await issueCollection.countDocuments({
+        //   status: "Rejected",
+        // });
+
+        // total payment (premium + boost)
+        // const payments = await userCollection
+        //   .aggregate([
+        //     { $match: { payment_status: "paid" } },
+        //     {
+        //       $group: {
+        //         _id: null,
+        //         totalAmount: { $sum: 1000 }, // premium price
+        //       },
+        //     },
+        //   ])
+        //   .toArray();
+
+        res.send({
+          totalIssues,
+          resolvedIssues,
+          pendingIssues,
+          // rejectedIssues,
+          // totalPayment: payments[0]?.totalAmount || 0,
+        });
+      }
     );
+
+    // Send a ping to confirm a successful connection
+    // await client.db("admin").command({ ping: 1 });
+    // console.log(
+    //   "Pinged your deployment. You successfully connected to MongoDB!"
+    // );
   } finally {
   }
 }
@@ -421,8 +485,9 @@ run().catch(console.dir);
 app.get("/", (req, res) => {
   res.send("Public Infrastructure Issue Reporting System server is running!");
 });
-app.listen(port, () => {
-  console.log(
-    `Public Infrastructure Issue Reporting System app listening on port ${port}`
-  );
-});
+
+// app.listen(port, () => {
+//   console.log(
+//     `Public Infrastructure Issue Reporting System app listening on port ${port}`
+//   );
+// });
