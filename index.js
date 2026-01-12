@@ -56,7 +56,7 @@ async function run() {
     const CivicFixBD = client.db("CivicFixBD");
     const issueCollection = CivicFixBD.collection("all-Issue");
     const userCollection = CivicFixBD.collection("users");
-    // const reportIssueCollection = CivicFixBD.collection("reportIssue");
+    const feedbackCollection = CivicFixBD.collection("feedback");
 
     const verifyAdmin = async (req, res, next) => {
       try {
@@ -119,6 +119,46 @@ async function run() {
 
       //  console.log(req.headers)
       res.send({ allIssue, total: countIssue });
+    });
+
+    // feedback api
+    app.get("/feedback", async (req, res) => {
+      const cursor = feedbackCollection.find({});
+      const newFeedback = await cursor.toArray();
+      res.send(newFeedback);
+    });
+
+    // new feedback api
+    app.post("/newfeedback", async (req, res) => {
+      const user = req.body;
+      // Check if user already exists
+      // const existingUser = await feedbackCollection.findOne({
+      //   email: user.email,
+      // });
+      // if (existingUser) {
+      //   return res.send({
+      //     message: "User already exists",
+      //     inserted: false,
+      //   });
+      // }
+      const newfeedback = {
+        name: user.name,
+        email: user.email,
+        rating:user.rating,
+        comment:user.comment,
+        createdAt: new Date(),
+        
+      };
+      const result = await feedbackCollection.insertOne(newfeedback);
+      res.send(result);
+    });
+
+    // feedback delete api
+    app.delete("/feedback/:email", async (req, res) => {
+      const email = req.params.email;
+      const query = { email:email};
+      const deletefeedback = await feedbackCollection.deleteOne(query);
+      res.send(deletefeedback);
     });
 
     // update upvote api
@@ -214,11 +254,13 @@ async function run() {
     // citizenDashboard report issue api
     app.post("/reportissue", verifyFirebaseToken, async (req, res) => {
       const Newissue = req.body;
-      Newissue.email = req.body.email;
+      // Newissue.email = req.body.email;
       const user = await userCollection.findOne({ email: Newissue.email });
 
       if (user.isPremium === false) {
-        const issueCount = await issueCollection.countDocuments({ email });
+        const issueCount = await issueCollection.countDocuments({
+          email: Newissue.email,
+        });
 
         if (issueCount >= 3) {
           return res.status(403).send({
@@ -473,10 +515,10 @@ async function run() {
     );
 
     // Send a ping to confirm a successful connection
-    // await client.db("admin").command({ ping: 1 });
-    // console.log(
-    //   "Pinged your deployment. You successfully connected to MongoDB!"
-    // );
+    await client.db("admin").command({ ping: 1 });
+    console.log(
+      "Pinged your deployment. You successfully connected to MongoDB!"
+    );
   } finally {
   }
 }
