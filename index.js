@@ -56,6 +56,7 @@ async function run() {
     const CivicFixBD = client.db("CivicFixBD");
     const issueCollection = CivicFixBD.collection("all-Issue");
     const userCollection = CivicFixBD.collection("users");
+    const blogsCollection = CivicFixBD.collection("blogs");
     const feedbackCollection = CivicFixBD.collection("feedback");
 
     const verifyAdmin = async (req, res, next) => {
@@ -80,7 +81,7 @@ async function run() {
     app.get("/latest-issue", async (req, res) => {
       const cursor = issueCollection
         .find({})
-        .limit(6)
+        .limit(8)
         .sort({ status: -1 })
         .project({
           id: 1,
@@ -121,6 +122,12 @@ async function run() {
       res.send({ allIssue, total: countIssue });
     });
 
+    // blogs api
+    app.get("/blogs", async (req, res) => {
+      const cursor = blogsCollection.find({});
+      const blogs = await cursor.toArray();
+      res.send(blogs);
+    });
     // feedback api
     app.get("/feedback", async (req, res) => {
       const cursor = feedbackCollection.find({});
@@ -223,6 +230,12 @@ async function run() {
     });
 
     // current user api
+    app.get("/users", async (req, res) => {
+       const cursor = userCollection.find({});
+      const users = await cursor.toArray();
+      res.send(users);
+    });
+
     app.get("/currentuser/:email", async (req, res) => {
       const email = req.params.email;
       const currentuser = await userCollection.findOne({ email });
